@@ -65,8 +65,8 @@ app.listen(port);
   * Minimal Magic — Explicit APIs, no hidden behaviour.
 
 ### 📚 Learn More
-  * Examples: Examples repo
-  * Contributing: Contribution guidelines
+  * Examples: [Examples repo](https://github.com/bunary-dev/examples)
+  * Contributing: [Contribution guidelines](../CONTRIBUTING.md)
   * Public roadmap: Coming soon — we welcome feedback.
 
 ### ⚖️ License
