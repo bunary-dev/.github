@@ -1,86 +1,74 @@
-# Bunary 🐰
+# Bunary — Bun-First Backend Platform  
+**Bunary is a modern backend platform for Bun, inspired by Laravel’s developer experience.**
 
-> **Bun-first backend platform inspired by Laravel**
+Bunary gives you an opinionated foundation for building APIs and backend services with **clarity, speed, and minimal boilerplate** — designed specifically for **Bun’s runtime performance** and **TypeScript workflows**.
 
-Bunary is a modern backend framework designed specifically for [Bun](https://bun.sh), bringing Laravel-like developer experience to the JavaScript ecosystem.
+---
 
-## ✨ Features
+## 🚀 Why Bunary Exists
 
-- 🚀 **Bun-first** - Built from the ground up for Bun's performance
-- 🛣️ **Expressive Routing** - Clean, Laravel-inspired route definitions
-- 🔒 **Guard-based Auth** - Flexible authentication system
-- ⚡ **Zero Config** - Sensible defaults, no boilerplate
-- 📦 **Modular** - Use only what you need
+JavaScript backend tooling today is either:
+- too low-level (manual setup),
+- based on Node conventions that slow you down,
+- or heavyweight frameworks with steep learning curves.
 
-## 🚀 Quick Start
+**Bunary** solves this by combining:
+- **Bun performance**
+- **Expressive routing**
+- **Modular utilities**
+- **Clear, explicit APIs**
 
+It’s for developers who want *productive backend code* without boilerplate.
+
+---
+
+## 🧪 Quick Start
+
+### Install Bun (if you don’t have it)
 ```bash
-# Install the CLI
+curl https://bun.sh/install | bash
+```
+### Create an new project
+```bash
 bun add -g @bunary/cli
-
-# Create a new project
 bunary init my-app
 cd my-app
-
-# Install dependencies and run
 bun install
 bun run dev
 ```
-
-## 📦 Packages
-
-| Package | Description | Version |
-|---------|-------------|--------|
-| [@bunary/core](https://github.com/bunary-dev/core) | Configuration and environment utilities | [![npm](https://img.shields.io/npm/v/@bunary/core)](https://www.npmjs.com/package/@bunary/core) |
-| [@bunary/http](https://github.com/bunary-dev/http) | HTTP routing and middleware | [![npm](https://img.shields.io/npm/v/@bunary/http)](https://www.npmjs.com/package/@bunary/http) |
-| [@bunary/auth](https://github.com/bunary-dev/auth) | Authentication and guards | [![npm](https://img.shields.io/npm/v/@bunary/auth)](https://www.npmjs.com/package/@bunary/auth) |
-| [@bunary/cli](https://github.com/bunary-dev/cli) | Command-line scaffolding | [![npm](https://img.shields.io/npm/v/@bunary/cli)](https://www.npmjs.com/package/@bunary/cli) |
-
-## 💡 Example
-
-```typescript
+### Minimal Example
+```ts
 import { createApp } from "@bunary/http";
-import { env, isDev } from "@bunary/core";
+import { env } from "@bunary/core";
 
 const app = createApp();
 
-// Simple JSON response
 app.get("/", () => ({ message: "Hello, Bunary!" }));
 
-// Path parameters
-app.get("/users/:id", (ctx) => {
-  return { id: ctx.params.id };
-});
-
-// Query parameters
-app.get("/search", (ctx) => {
-  return { query: ctx.query.get("q") };
-});
-
-// Middleware
-app.use(async (ctx, next) => {
-  console.log(`${ctx.request.method} ${ctx.request.url}`);
-  return next();
-});
-
-const port = parseInt(env("PORT", "3000"), 10);
+const port = parseInt(env("PORT", "3000"));
 app.listen(port);
-console.log(`Server running on http://localhost:${port}`);
 ```
+### 📦 Packages
 
-## 📚 Resources
+| Package        | Purpose                             |
+| -------------- | ----------------------------------- |
+| `@bunary/core` | Configuration & environment helpers |
+| `@bunary/http` | HTTP routing & middleware           |
+| `@bunary/auth` | Auth primitives & guard scaffolding |
+| `@bunary/cli`  | CLI tooling & project scaffolding   |
 
-- [Examples](https://github.com/bunary-dev/examples) - Working code examples
-- [Contributing](https://github.com/bunary-dev/.github/blob/main/CONTRIBUTING.md) - Development guide
 
-## 🎯 Philosophy
+### 💡 Key Concepts
+  * Bun-First — Built to leverage Bun’s performance without Node overhead.
+  * Laravel-Inspired — Sensible defaults and developer productivity.
+  * Modular — Use only what you need.
+  * Minimal Magic — Explicit APIs, no hidden behaviour.
 
-1. **Bun-first**: Leverage Bun's full potential, no Node.js baggage
-2. **Developer Joy**: Laravel-inspired DX with modern TypeScript
-3. **Minimal Magic**: Clear, explicit APIs over hidden conventions
-4. **Batteries Included**: Complete toolkit out of the box
-5. **Modular Design**: Pick what you need, tree-shake the rest
+### 📚 Learn More
+  * Examples: Examples repo
+  * Contributing: Contribution guidelines
+  * Public roadmap: Coming soon — we welcome feedback.
 
-## 📄 License
+### ⚖️ License
 
-MIT © [Bunary Contributors](https://github.com/bunary-dev)
+MIT © Bunary Contributors
