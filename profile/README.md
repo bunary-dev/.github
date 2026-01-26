@@ -56,6 +56,7 @@ app.listen(port);
 | `@bunary/http` | HTTP routing & middleware           |
 | `@bunary/auth` | Auth primitives & guard scaffolding |
 | `@bunary/cli`  | CLI tooling & project scaffolding   |
+| `@bunary/orm`  | ORM with database abstraction layer |
 
 
 ### 💡 Key Concepts
