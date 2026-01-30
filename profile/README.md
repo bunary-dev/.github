@@ -68,7 +68,7 @@ app.listen(port);
 ### 📚 Learn More
   * Examples: [Examples repo](https://github.com/bunary-dev/examples)
   * Contributing: [Contribution guidelines](../CONTRIBUTING.md)
-  * Public roadmap: Coming soon — we welcome feedback.
+  * Roadmap: [View the roadmap](../ROADMAP.md) — feedback welcome
 
 ### ⚖️ License
 
