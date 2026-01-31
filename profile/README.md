@@ -28,7 +28,7 @@ It’s for developers who want *productive backend code* without boilerplate.
 ```bash
 curl https://bun.sh/install | bash
 ```
-### Create an new project
+### Create a new project
 ```bash
 bun add -g @bunary/cli
 bunary init my-app
@@ -39,14 +39,13 @@ bun run dev
 ### Minimal Example
 ```ts
 import { createApp } from "@bunary/http";
-import { env } from "@bunary/core";
 
 const app = createApp();
 
 app.get("/", () => ({ message: "Hello, Bunary!" }));
 
-const port = parseInt(env("PORT", "3000"));
-app.listen(port);
+const server = app.listen({ port: 3000 });
+console.log(`Server running on http://localhost:${server.port}`);
 ```
 ### 📦 Packages
 
@@ -66,6 +65,7 @@ app.listen(port);
   * Minimal Magic — Explicit APIs, no hidden behaviour.
 
 ### 📚 Learn More
+  * Website: [bunary.dev](https://bunary.dev)
   * Examples: [Examples repo](https://github.com/bunary-dev/examples)
   * Contributing: [Contribution guidelines](../CONTRIBUTING.md)
   * Roadmap: [View the roadmap](../ROADMAP.md) — feedback welcome
