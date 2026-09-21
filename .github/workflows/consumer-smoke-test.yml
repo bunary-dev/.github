@@ -1,0 +1,66 @@
+# Reusable consumer smoke test.
+#
+# Packs the calling repo's package and proves a real consumer can use the
+# published artifact: exports-map condition order, `tsc --noEmit` under
+# `moduleResolution: node16` for every exports subpath, and a runtime import
+# with bun.
+#
+# Adopt it from a package repo with:
+#
+#   jobs:
+#     consumer-smoke-test:
+#       uses: bunary-dev/.github/.github/workflows/consumer-smoke-test.yml@main
+#
+# The check itself lives in scripts/consumer-smoke-test.ts in this repo and can
+# be run locally against any package or tarball:
+#
+#   bun scripts/consumer-smoke-test.ts --dir /path/to/package
+#   bun scripts/consumer-smoke-test.ts --tarball ./some-package-1.2.3.tgz
+
+name: Consumer smoke test
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory of the package to pack and smoke test.
+        type: string
+        required: false
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  consumer-smoke-test:
+    name: Consumer smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v7
+
+      # Pulled from the same commit as this reusable workflow so the harness and
+      # the workflow never drift apart.
+      - name: Check out the smoke-test harness
+        uses: actions/checkout@v7
+        with:
+          repository: bunary-dev/.github
+          ref: ${{ github.job_workflow_sha }}
+          path: .consumer-smoke-harness
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ${{ inputs.working-directory }}/.bun-version
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: bun run build
+
+      - name: Consumer smoke test
+        working-directory: ${{ inputs.working-directory }}
+        run: bun "${{ github.workspace }}/.consumer-smoke-harness/scripts/consumer-smoke-test.ts"
