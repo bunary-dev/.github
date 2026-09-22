@@ -92,6 +92,22 @@ async function pack(dir: string, dest: string): Promise<string> {
 	return join(dest, tarballs[0] as string);
 }
 
+/**
+ * List every `*.tgz` under `<dir>/vendor`, e.g. a vendored optional peer that
+ * isn't published to npm (see bunary-dev/http#93). Returns an empty array
+ * when `vendor/` doesn't exist — a no-op for packages that don't vendor.
+ */
+async function vendoredTarballs(dir: string): Promise<string[]> {
+	const vendorDir = join(dir, "vendor");
+	let entries: string[];
+	try {
+		entries = await readdir(vendorDir);
+	} catch {
+		return [];
+	}
+	return entries.filter((f) => f.endsWith(".tgz")).map((f) => join(vendorDir, f));
+}
+
 /** Read package.json out of the tarball itself — the published artifact is the source of truth. */
 async function manifestFromTarball(tarball: string): Promise<{ name: string; version: string; exports?: unknown }> {
 	const { ok, out } = await run(["tar", "-xOf", tarball, "package/package.json"], process.cwd());
@@ -192,6 +208,17 @@ async function main(): Promise<void> {
 		);
 		console.log("\n→ installing tarball + typescript@^7 + @types/bun");
 		await mustRun(["bun", "add", tarball, "typescript@^7", "@types/bun"], consumer, "bun add");
+
+		// Install any vendored optional peers (e.g. an unpublished dependency
+		// shipped as a `file:` devDependency, see bunary-dev/http#93) so
+		// subpaths that import them resolve in the consumer project too.
+		// No-op when the calling repo has no vendor/ directory.
+		const vendored = await vendoredTarballs(args.dir);
+		if (vendored.length > 0) {
+			console.log(`\n→ installing ${vendored.length} vendored tarball(s) from ${join(args.dir, "vendor")}`);
+			for (const v of vendored) console.log(`  vendor: ${v}`);
+			await mustRun(["bun", "add", ...vendored], consumer, "bun add (vendored tarballs)");
+		}
 
 		// 4. generate one probe per subpath -----------------------------------
 		const files: string[] = [];
