@@ -10,7 +10,14 @@
  *      `import * as m from "<pkg>[/subpath]"` with `tsc --noEmit` under
  *      `moduleResolution: node16`,
  *   3. imports every subpath at runtime with bun and asserts the module object
- *      has >= 1 key.
+ *      has >= 1 key,
+ *   4. asserts every declared `bin` is linked into the consumer's
+ *      `node_modules/.bin`, and with `--bin-smoke "<command>"` runs that command
+ *      in an empty directory with those bins on PATH (e.g. `bunary init app`,
+ *      which proves the CLI's runtime stubs made it into the tarball).
+ *
+ * A bin-only package (exports map holding nothing but `./package.json`) has no
+ * import surface, so steps 2–3 are skipped; it must declare a `bin` instead.
  *
  * Why step 1 is a separate assertion and not left to tsc: when `"types"` is listed
  * after `"import"`, TypeScript resolves the `import` condition to `./dist/x.js` and
@@ -34,6 +41,9 @@
  *   # check an already-built tarball (e.g. one from `npm pack <pkg>@<version>`)
  *   bun scripts/consumer-smoke-test.ts --tarball ./bunary-core-0.2.0.tgz
  *
+ *   # also run a command from the installed bins
+ *   bun scripts/consumer-smoke-test.ts --bin-smoke "bunary init smoke-app"
+ *
  *   # keep the temp consumer project for inspection
  *   bun scripts/consumer-smoke-test.ts --keep
  *
@@ -48,6 +58,7 @@ interface Args {
 	dir: string;
 	tarball?: string;
 	keep: boolean;
+	binSmoke?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -57,16 +68,21 @@ function parseArgs(argv: string[]): Args {
 		if (arg === "--dir") args.dir = resolve(argv[++i] ?? ".");
 		else if (arg === "--tarball") args.tarball = resolve(argv[++i] ?? "");
 		else if (arg === "--keep") args.keep = true;
+		else if (arg === "--bin-smoke") args.binSmoke = argv[++i] ?? "";
 		else if (arg === "--help" || arg === "-h") {
-			console.log("usage: bun scripts/consumer-smoke-test.ts [--dir <pkg-dir>] [--tarball <file>] [--keep]");
+			console.log("usage: bun scripts/consumer-smoke-test.ts [--dir <pkg-dir>] [--tarball <file>] [--bin-smoke <command>] [--keep]");
 			process.exit(0);
 		} else throw new Error(`unknown argument: ${arg}`);
 	}
 	return args;
 }
 
-async function run(cmd: string[], cwd: string): Promise<{ ok: boolean; out: string }> {
-	const proc = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+async function run(
+	cmd: string[],
+	cwd: string,
+	env?: Record<string, string | undefined>,
+): Promise<{ ok: boolean; out: string }> {
+	const proc = Bun.spawn(cmd, { cwd, env, stdout: "pipe", stderr: "pipe" });
 	const [stdout, stderr] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -109,19 +125,32 @@ async function vendoredTarballs(dir: string): Promise<string[]> {
 }
 
 /** Read package.json out of the tarball itself — the published artifact is the source of truth. */
-async function manifestFromTarball(tarball: string): Promise<{ name: string; version: string; exports?: unknown }> {
+async function manifestFromTarball(tarball: string): Promise<{ name: string; version: string; exports?: unknown; bin?: unknown }> {
 	const { ok, out } = await run(["tar", "-xOf", tarball, "package/package.json"], process.cwd());
 	if (!ok) throw new Error(`could not read package/package.json from ${tarball}:\n${out}`);
 	return JSON.parse(out);
 }
 
-/** Every subpath in the exports map, skipping ./package.json. A string/absent map means "." only. */
+/**
+ * Every subpath in the exports map, skipping ./package.json. A string/absent map
+ * means "." only. A map whose only entry is ./package.json has no import surface
+ * (a bin-only package such as @bunary/cli) and yields no subpaths.
+ */
 function subpaths(exportsMap: unknown): string[] {
 	if (!exportsMap || typeof exportsMap !== "object" || Array.isArray(exportsMap)) return ["."];
-	const keys = Object.keys(exportsMap as Record<string, unknown>).filter((k) => k !== "./package.json");
+	const all = Object.keys(exportsMap as Record<string, unknown>);
+	const keys = all.filter((k) => k !== "./package.json");
 	// A conditions-only map ({ "types": ..., "import": ... }) is the root export.
 	if (keys.length > 0 && !keys.some((k) => k === "." || k.startsWith("./"))) return ["."];
+	if (keys.length === 0 && all.length > 0) return [];
 	return keys.length > 0 ? keys : ["."];
+}
+
+/** Declared bin names. A string `bin` is named after the unscoped package name. */
+function binNames(pkg: string, bin: unknown): string[] {
+	if (typeof bin === "string") return [pkg.replace(/^@[^/]+\//, "")];
+	if (bin && typeof bin === "object" && !Array.isArray(bin)) return Object.keys(bin);
+	return [];
 }
 
 /**
@@ -186,9 +215,19 @@ async function main(): Promise<void> {
 		const manifest = await manifestFromTarball(tarball);
 		const pkg = manifest.name;
 		const paths = subpaths(manifest.exports);
+		const bins = binNames(pkg, manifest.bin);
 		console.log(`package : ${pkg}@${manifest.version}`);
 		console.log(`tarball : ${tarball}`);
-		console.log(`subpaths: ${paths.join(", ")}`);
+		console.log(`subpaths: ${paths.length > 0 ? paths.join(", ") : "(none: bin-only)"}`);
+		if (bins.length > 0) console.log(`bins    : ${bins.join(", ")}`);
+		if (paths.length === 0 && bins.length === 0) {
+			console.error(`\n::error::${pkg} exports no subpaths and declares no bin; there is nothing a consumer can use`);
+			process.exit(1);
+		}
+		if (args.binSmoke !== undefined && bins.length === 0) {
+			console.error(`\n::error::--bin-smoke given but ${pkg} declares no bin`);
+			process.exit(1);
+		}
 
 		// 2. exports map condition order --------------------------------------
 		console.log("\n→ exports map condition order");
@@ -220,76 +259,107 @@ async function main(): Promise<void> {
 			await mustRun(["bun", "add", ...vendored], consumer, "bun add (vendored tarballs)");
 		}
 
-		// 4. generate one probe per subpath -----------------------------------
-		const files: string[] = [];
-		for (const [i, subpath] of paths.entries()) {
-			const spec = specifier(pkg, subpath);
-			const file = `probes/probe-${i}.ts`;
-			await writeFile(join(consumer, file), probeSource(spec));
-			files.push(file);
-			console.log(`  probe ${file} -> ${spec}`);
-		}
-		await writeFile(
-			join(consumer, "tsconfig.json"),
-			`${JSON.stringify(
-				{
-					compilerOptions: {
-						module: "node16",
-						moduleResolution: "node16",
-						target: "esnext",
-						strict: true,
-						noEmit: true,
-						skipLibCheck: true,
-						types: ["bun"],
+		if (paths.length > 0) {
+			// 4. generate one probe per subpath -----------------------------------
+			const files: string[] = [];
+			for (const [i, subpath] of paths.entries()) {
+				const spec = specifier(pkg, subpath);
+				const file = `probes/probe-${i}.ts`;
+				await writeFile(join(consumer, file), probeSource(spec));
+				files.push(file);
+				console.log(`  probe ${file} -> ${spec}`);
+			}
+			await writeFile(
+				join(consumer, "tsconfig.json"),
+				`${JSON.stringify(
+					{
+						compilerOptions: {
+							module: "node16",
+							moduleResolution: "node16",
+							target: "esnext",
+							strict: true,
+							noEmit: true,
+							skipLibCheck: true,
+							types: ["bun"],
+						},
+						files,
 					},
-					files,
-				},
-				null,
-				2,
-			)}\n`,
-		);
+					null,
+					2,
+				)}\n`,
+			);
 
-		// 5. type check --------------------------------------------------------
-		console.log("\n→ tsc --noEmit (moduleResolution: node16)");
-		const tsc = await run(["./node_modules/.bin/tsc", "--noEmit", "-p", "tsconfig.json"], consumer);
-		if (!tsc.ok) {
-			console.error(`\n::error::consumer type check failed for ${pkg} — the published artifact is not usable from TypeScript`);
-			console.error(tsc.out);
-			process.exit(1);
+			// 5. type check --------------------------------------------------------
+			console.log("\n→ tsc --noEmit (moduleResolution: node16)");
+			const tsc = await run(["./node_modules/.bin/tsc", "--noEmit", "-p", "tsconfig.json"], consumer);
+			if (!tsc.ok) {
+				console.error(`\n::error::consumer type check failed for ${pkg} — the published artifact is not usable from TypeScript`);
+				console.error(tsc.out);
+				process.exit(1);
+			}
+			console.log("  OK — every subpath resolves types");
+
+			// 6. runtime import ----------------------------------------------------
+			console.log("\n→ runtime import with bun");
+			const specs = paths.map((p) => specifier(pkg, p));
+			await writeFile(
+				join(consumer, "runtime.ts"),
+				[
+					`const specs = ${JSON.stringify(specs)};`,
+					`let failed = false;`,
+					`for (const spec of specs) {`,
+					`  try {`,
+					`    const mod = await import(spec);`,
+					`    const keys = Object.keys(mod);`,
+					`    if (keys.length === 0) { console.error(\`  FAIL \${spec}: module object has no keys\`); failed = true; }`,
+					`    else console.log(\`  OK   \${spec} (\${keys.length} export(s))\`);`,
+					`  } catch (err) {`,
+					`    console.error(\`  FAIL \${spec}: \${err}\`);`,
+					`    failed = true;`,
+					`  }`,
+					`}`,
+					`if (failed) process.exit(1);`,
+					"",
+				].join("\n"),
+			);
+			const runtime = await run(["bun", "run", "runtime.ts"], consumer);
+			console.log(runtime.out);
+			if (!runtime.ok) {
+				console.error(`\n::error::runtime import failed for ${pkg}`);
+				process.exit(1);
+			}
+
 		}
-		console.log("  OK — every subpath resolves types");
 
-		// 6. runtime import ----------------------------------------------------
-		console.log("\n→ runtime import with bun");
-		const specs = paths.map((p) => specifier(pkg, p));
-		await writeFile(
-			join(consumer, "runtime.ts"),
-			[
-				`const specs = ${JSON.stringify(specs)};`,
-				`let failed = false;`,
-				`for (const spec of specs) {`,
-				`  try {`,
-				`    const mod = await import(spec);`,
-				`    const keys = Object.keys(mod);`,
-				`    if (keys.length === 0) { console.error(\`  FAIL \${spec}: module object has no keys\`); failed = true; }`,
-				`    else console.log(\`  OK   \${spec} (\${keys.length} export(s))\`);`,
-				`  } catch (err) {`,
-				`    console.error(\`  FAIL \${spec}: \${err}\`);`,
-				`    failed = true;`,
-				`  }`,
-				`}`,
-				`if (failed) process.exit(1);`,
-				"",
-			].join("\n"),
-		);
-		const runtime = await run(["bun", "run", "runtime.ts"], consumer);
-		console.log(runtime.out);
-		if (!runtime.ok) {
-			console.error(`\n::error::runtime import failed for ${pkg}`);
-			process.exit(1);
+		// 7. bins ---------------------------------------------------------------
+		if (bins.length > 0) {
+			console.log("\n→ bins linked in node_modules/.bin");
+			const binDir = join(consumer, "node_modules", ".bin");
+			for (const name of bins) {
+				if (!(await Bun.file(join(binDir, name)).exists())) {
+					console.error(`\n::error::bin "${name}" from ${pkg} is not linked in node_modules/.bin`);
+					process.exit(1);
+				}
+				console.log(`  OK   ${name}`);
+			}
+		}
+		if (args.binSmoke) {
+			console.log(`\n→ bin smoke: ${args.binSmoke}`);
+			const smokeDir = join(workspace, "bin-smoke");
+			await mkdir(smokeDir, { recursive: true });
+			const binDir = join(consumer, "node_modules", ".bin");
+			const smoke = await run(["sh", "-c", args.binSmoke], smokeDir, {
+				...process.env,
+				PATH: `${binDir}:${process.env.PATH ?? ""}`,
+			});
+			console.log(smoke.out);
+			if (!smoke.ok) {
+				console.error(`\n::error::bin smoke command failed for ${pkg}: ${args.binSmoke}`);
+				process.exit(1);
+			}
 		}
 
-		console.log(`\nconsumer smoke test PASSED for ${pkg}@${manifest.version} (${paths.length} subpath(s))`);
+		console.log(`\nconsumer smoke test PASSED for ${pkg}@${manifest.version} (${paths.length} subpath(s), ${bins.length} bin(s))`);
 	} finally {
 		if (args.keep) console.log(`\n(kept workspace: ${workspace})`);
 		else await rm(workspace, { recursive: true, force: true });
