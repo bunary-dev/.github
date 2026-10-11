@@ -1,0 +1,83 @@
+# Reusable publish-hygiene lint.
+#
+# Packs the calling repo's package and fails on publish mistakes: "types" not
+# first or "default" missing in an exports condition block, a scoped package
+# without publishConfig.access, a file the manifest points at (or a required
+# runtime asset) missing from the tarball, and a version already on npm.
+#
+# Adopt it from a package repo with:
+#
+#   jobs:
+#     publish-hygiene:
+#       uses: bunary-dev/.github/.github/workflows/publish-hygiene.yml@main
+#       with:
+#         require: dist/stubs   # optional, space- or comma-separated
+#
+# Run it locally with:
+#
+#   bun scripts/publish-hygiene.ts --dir /path/to/package [--require dist/stubs] [--skip-npm]
+
+name: Publish hygiene
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory of the package to lint.
+        type: string
+        required: false
+        default: "."
+      require:
+        description: Extra runtime paths that must be in the tarball (space- or comma-separated).
+        type: string
+        required: false
+        default: ""
+      check-npm-version:
+        description: Fail when package.json's version is already published on npm.
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish-hygiene:
+    name: Publish hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v7
+
+      # Pulled from the same commit as this reusable workflow so the script and
+      # the workflow never drift apart.
+      - name: Check out the lint script
+        uses: actions/checkout@v7
+        with:
+          repository: bunary-dev/.github
+          ref: ${{ github.job_workflow_sha }}
+          path: .publish-hygiene-harness
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ${{ inputs.working-directory }}/.bun-version
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: bun run build
+
+      - name: Publish hygiene
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          REQUIRE: ${{ inputs.require }}
+          CHECK_NPM: ${{ inputs.check-npm-version }}
+        run: |
+          args=()
+          [ -n "$REQUIRE" ] && args+=(--require "$REQUIRE")
+          [ "$CHECK_NPM" = "true" ] || args+=(--skip-npm)
+          bun "${{ github.workspace }}/.publish-hygiene-harness/scripts/publish-hygiene.ts" "${args[@]}"
