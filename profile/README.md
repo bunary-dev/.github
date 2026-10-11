@@ -63,6 +63,7 @@ console.log(`Server running on http://localhost:${server.port}`);
   * Laravel-Inspired — Sensible defaults and developer productivity.
   * Modular — Use only what you need.
   * Minimal Magic — Explicit APIs, no hidden behaviour.
+  * Fail Loud — Public APIs throw or warn; they never silently no-op or swallow errors.
 
 ### 📚 Learn More
   * Website: [bunary.dev](https://bunary.dev)
