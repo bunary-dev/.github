@@ -113,6 +113,30 @@ git commit -m "refactor: improve code structure"
 - Describe what changed and why
 - Ensure all CI checks pass
 
+## 🧭 Core Principles
+
+Every package follows these. A PR that breaks one needs a reason in its description.
+
+- **Bun-native APIs only**: use `Bun.serve()`, `Bun.env` and `Bun.file()` directly, with no Node compatibility layers.
+- **No decorators, no DI containers**: plain functions and objects with explicit dependencies.
+- **App-scoped state, never global**: no module-level singletons.
+- **Explicit exports only**: every public export is intentional; nothing leaks by accident.
+- **JSDoc on all public APIs**: every export carries an `@example`.
+- **Fail loud**: a public API must never silently no-op or swallow an error. Degraded behaviour requires a thrown error or an explicit warning that names what was skipped and why.
+
+### Fail loud: anti-patterns
+
+These shipped in earlier releases and are the cases the rule exists for:
+
+| Anti-pattern | Where | What it should do |
+| --- | --- | --- |
+| Reports success while registering nothing | `installAuthPlugin` no-ops routes ([auth#45](https://github.com/bunary-dev/auth/issues/45)) | Throw when it cannot install, or never claim success |
+| Swallows the user's config errors | CLI loads `config/bunary.ts` with `catch { return []; }` ([cli#86](https://github.com/bunary-dev/cli/issues/86)) | Surface the error; the user's commands silently vanish otherwise |
+| Silent no-op | `clearBunaryConfig` ([core#50](https://github.com/bunary-dev/core/issues/50)) | Do the work, or throw/warn that it cannot |
+| Fails open | invalid `NODE_ENV` falls back to `development` ([core#48](https://github.com/bunary-dev/core/issues/48)) | Reject unknown values instead of guessing |
+
+Rule of thumb: if a caller could reasonably believe something happened when it did not, throw. An empty `catch` block needs a comment saying why swallowing is correct.
+
 ## 📐 Code Style
 
 - **TypeScript**: Strict mode enabled
