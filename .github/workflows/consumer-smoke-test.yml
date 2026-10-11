@@ -11,6 +11,11 @@
 #     consumer-smoke-test:
 #       uses: bunary-dev/.github/.github/workflows/consumer-smoke-test.yml@main
 #
+# A package with a CLI can also exercise its bin from the installed tarball:
+#
+#       with:
+#         bin-smoke: bunary init smoke-app
+#
 # The check itself lives in scripts/consumer-smoke-test.ts in this repo and can
 # be run locally against any package or tarball:
 #
@@ -27,6 +32,13 @@ on:
         type: string
         required: false
         default: "."
+      bin-smoke:
+        description: >-
+          Optional shell command run in an empty directory with the installed
+          package's bins on PATH, e.g. `bunary init smoke-app`.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -63,4 +75,11 @@ jobs:
 
       - name: Consumer smoke test
         working-directory: ${{ inputs.working-directory }}
-        run: bun "${{ github.workspace }}/.consumer-smoke-harness/scripts/consumer-smoke-test.ts"
+        env:
+          BIN_SMOKE: ${{ inputs.bin-smoke }}
+        run: |
+          if [ -n "$BIN_SMOKE" ]; then
+            bun "${{ github.workspace }}/.consumer-smoke-harness/scripts/consumer-smoke-test.ts" --bin-smoke "$BIN_SMOKE"
+          else
+            bun "${{ github.workspace }}/.consumer-smoke-harness/scripts/consumer-smoke-test.ts"
+          fi
