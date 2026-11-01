@@ -50,9 +50,10 @@
  * Exits non-zero on the first failure.
  */
 
-import { mkdtemp, mkdir, rm, writeFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { missingOptionalPeers, type PeerManifest } from "./optional-peers.ts";
 
 interface Args {
 	dir: string;
@@ -125,7 +126,7 @@ async function vendoredTarballs(dir: string): Promise<string[]> {
 }
 
 /** Read package.json out of the tarball itself — the published artifact is the source of truth. */
-async function manifestFromTarball(tarball: string): Promise<{ name: string; version: string; exports?: unknown; bin?: unknown }> {
+async function manifestFromTarball(tarball: string): Promise<{ name: string; version: string; exports?: unknown; bin?: unknown } & PeerManifest> {
 	const { ok, out } = await run(["tar", "-xOf", tarball, "package/package.json"], process.cwd());
 	if (!ok) throw new Error(`could not read package/package.json from ${tarball}:\n${out}`);
 	return JSON.parse(out);
@@ -257,6 +258,17 @@ async function main(): Promise<void> {
 			console.log(`\n→ installing ${vendored.length} vendored tarball(s) from ${join(args.dir, "vendor")}`);
 			for (const v of vendored) console.log(`  vendor: ${v}`);
 			await mustRun(["bun", "add", ...vendored], consumer, "bun add (vendored tarballs)");
+		}
+
+		// Optional peers that weren't vendored come from npm at their declared
+		// range, so subpaths that import them (e.g. @bunary/http/provider needs
+		// @bunary/core) resolve once the peer is published. See bunary-dev/.github#23.
+		const consumerDeps = (JSON.parse(await readFile(join(consumer, "package.json"), "utf8")).dependencies ?? {}) as Record<string, string>;
+		const fromNpm = missingOptionalPeers(manifest, consumerDeps);
+		if (fromNpm.length > 0) {
+			console.log(`\n→ installing ${fromNpm.length} optional peer(s) from npm`);
+			for (const p of fromNpm) console.log(`  peer: ${p}`);
+			await mustRun(["bun", "add", ...fromNpm], consumer, "bun add (optional peers from npm)");
 		}
 
 		if (paths.length > 0) {
