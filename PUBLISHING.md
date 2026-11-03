@@ -46,8 +46,9 @@ bun pm pack --dry-run      # only dist/ plus README, CHANGELOG, LICENSE; no test
 npm publish --access public   # prompts for the 2FA code
 ```
 
-Always run `bun run build` right before publishing: only `@bunary/cli` rebuilds itself on publish
-(`prepublishOnly`); the other packages publish whatever is in `dist/`.
+Every package's `prepublishOnly` runs `clean → build → test → typecheck`, so `npm publish` always
+ships a fresh build of the checked-out source, or stops. (It used to publish whatever was already in
+`dist/`, which is how `@bunary/http` 0.7.0 shipped a stale build: http#163.)
 
 Then check it landed:
 
@@ -75,6 +76,14 @@ wave's PRs switch to the published versions.
 - **Don't `npm unpublish`** a version anyone may have installed: npm allows it only within 72
   hours, the version number can never be reused, and it breaks lockfiles that pinned it.
 - **Wrong dist-tag:** `npm dist-tag add @bunary/<name>@<version> latest`.
+- **`prepublishOnly` fails locally while CI is green:** the checkout's `node_modules` is stale.
+  After a merge that bumps a dependency (e.g. Biome), the old version is still installed. And a
+  package that's no longer in the lockfile can be left behind; a stray `node_modules/bun` is the
+  worst case, because npm puts `node_modules/.bin` first on `PATH`, so `bun` inside
+  `npm publish` runs that old Bun instead of yours. Reinstall from the lockfile and retry:
+  `rm -rf node_modules && bun install --frozen-lockfile`.
+- **`npm publish` fails with `E404 Not Found - PUT`:** npm isn't accepting your login (expired or
+  revoked token), not a missing package. Check with `npm whoami`; fix with `npm login`.
 
 ## Baseline
 
